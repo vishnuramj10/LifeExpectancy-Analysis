@@ -1,0 +1,219 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+library(car)
+```
+
+
+# Loading the cleaned dataset
+```{r}
+file <- 'life_expectancy_final_data.csv'
+dat <- read.csv('/Users/admin/Downloads/life_expectancy_final_data.csv')
+```
+```{r}
+summary(dat)
+```
+
+```{r}
+head(dat)
+```
+# Model Selection 
+
+#Backward Elimination
+```{r}
+out.full=lm(life_expectancy~.- X- status - country - year,dat)
+out.backward=step(out.full,scope=list(lower=~1,upper=full),direction="backward",trace=FALSE,k=log(n))
+out.backward$coefficients
+```
+```{r}
+temp=lm(out.full)
+summary(temp)
+AIC(temp)
+BIC(temp)
+vif(temp)
+```
+
+```{r}
+vif(out.backward)
+```
+
+```{r}
+out.backward_1=lm(life_expectancy~adult_mortality+ alcohol + bmi + polio+ total_expenditure + diphtheria + hiv.aids + gdp + thinness__1_19_years + income_composition_of_resources, data=dat )
+out.backward_1$coefficients
+```
+
+```{r}
+summary(out.backward_1)
+AIC(out.backward_1)
+BIC(out.backward_1)
+```
+
+#Finding multicollinearity
+```{r}
+vif(out.backward_1)
+```
+
+
+# Forward Selection
+```{r}
+n = nrow(dat)
+out.null=lm(life_expectancy~1, data=dat)
+full=formula(lm(life_expectancy~. - X - status - country - year,dat))
+out.forward=step(out.null,scope=list(lower=~1,upper=full),k=log(n),direction="forward",trace=FALSE)
+out.forward$coefficients
+```
+```{r}
+vif(out.forward)
+```
+
+
+```{r}
+summary(out.forward)
+AIC(out.forward)
+BIC(out.forward)
+```
+
+# We conclude that the forward selection is better over bckward elimination because it hs a higher adjusted R^2, lower AIC and BIC
+
+```{r}
+plot(fitted(out.forward),residuals(out.forward))
+abline(0,0)
+```
+
+#Normality plots
+```{r}
+qqnorm(residuals(out.forward))
+qqline(residuals(out.forward))
+```
+
+#From the normality plot, we observe that the distribution is a bit light tailed. So,we try to perform box cox transform to make the distribution close to normal
+
+```{r}
+plot(density(residuals(out.forward)))
+```
+
+#Boxcox Transformation
+```{r}
+model_3= lm((((life_expectancy)**(-0.802))-1)/(-0.802) ~ schooling + adult_mortality + hiv.aids + diphtheria + bmi + income_composition_of_resources + percentage_expenditure + polio + thinness__1_19_years + measles + alcohol,data=dat)
+summary(model_3)
+
+```
+
+```{r}
+qqnorm(residuals(model_3))
+qqline(residuals(model_3))
+```
+#From the normality plots of the transformed model, we observe that the distribution is still a little light tailed but its better compared to the previous model. Hence, this model is better
+```{r}
+tail(dat)
+```
+
+# Finding Outliers
+```{r}
+student <- rstudent(model_3)
+jackkniferes <- student*(2925/(2926-student^2))^0.5
+head(jackkniferes[order(abs(student),decreasing=T)],15)
+
+```
+
+```{r}
+qt(0.025/2938,2925)
+
+```
+
+#Dropping the outliers
+```{r}
+df_drop1 <- dat[-c(63,64,1128,2306,2308,2310,2312,2313,2309,2307,434),]
+```
+
+#After dropping the outliers we fit the final model 
+```{r}
+model_final= lm((((life_expectancy)**(-0.802))-1)/(-0.802) ~ schooling + adult_mortality + hiv.aids + diphtheria + bmi + income_composition_of_resources + percentage_expenditure + polio + thinness__1_19_years + measles + alcohol,data=df_drop1)
+summary(model_final)
+```
+#We observe the adjusted R^2 is 0.8124 and all the predictors p value is way less than the 5% significance level(0.05). Hence, this is model is a good fit
+
+
+#Now lets verify if there are any more outliers
+```{r}
+student <- rstudent(model_final)
+jackkniferes <- student*(2914/(2915-student^2))^0.5
+head(jackkniferes[order(abs(student),decreasing=T)])
+```
+
+```{r}
+qt(0.025/2927,2914)
+
+```
+#Conclusion -There are no mpre outliers
+
+#Plotting the normality for the final model
+```{r}
+qqnorm(residuals(model_final))
+qqline(residuals(model_final))
+```
+#We see this is a very good fit almost close to the normal line
+
+#Plotting the residuls
+```{r}
+plot(fitted(model_final),residuals(model_final))
+abline(0,0)
+```
+
+#Plotting the density
+```{r}
+plot(density(residuals(model_final)))
+
+```
+#We see that the distribution is almost normal. Hence, we conclude that this model is a very good fit
+
+
+#Influential Points
+```{r}
+library('faraway')
+states<-row.names(dat)
+cook<-cooks.distance(out.forward)
+halfnorm(cook,6,labs=states,ylab="Cook’s distances")
+```
+# Conclusion
+
+
+#Hypothesis testing
+```{r}
+
+#Test 1
+# We realize that none of the immunization factors seem to have correlation on life expectancy but we want to know which of the immunizations factors have a higher impact on life expectancy.
+
+# Test diphteria > polio
+#H0 : diphteria = polio
+#H1 : diphteria < polio
+linearHypothesis(model_final, c('diphtheria - polio = 0'))
+```
+
+# Conclusion - As the p value is greter than 0.05, we accept the null hypothesis and conclude that the immunization of diphtheria has more effect on life expectancy than the immunization of polio.
+
+
+```{r}
+#Test 2
+# Which of the diseases has more impct
+#H0 : measles = hiv.aids
+#H1 : measles < hiv.aids
+linearHypothesis(model_final, c('measles - hiv.aids = 0'))
+```
+
+
+#Conslusion - As the p value is less than 0.05, we reject the null hypothesis and conclude that hiv has more impact on life expectancy than measles
+
+```{r}
+# Test 3
+# Is alcohol even a good factor to predict life expectancy
+#H0 : alcohol = 0
+#H1 : alcohol != 0
+linearHypothesis(model_final, c('alcohol = 0'))
+```
+
+#Conclusion -As p value is less than 0.05, we reject the null hypothesis and conclude that alcohol has some impact on life expectancy.
+#But at 99.9% significance level, alcohol does not have an impact on life expectancy
+
